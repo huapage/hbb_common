@@ -495,8 +495,39 @@ pub fn load_path<T: serde::Serialize + serde::de::DeserializeOwned + Default + s
     cfg
 }
 
+pub fn is_under_program_files() -> bool
+{
+    let result = std::env::current_exe();
+    let full_path = result.unwrap().into_os_string().into_string().unwrap();
+    if full_path.to_lowercase().contains("\\program files\\")
+    {
+        return true;
+    }
+    else if full_path.to_lowercase().contains("\\program files (x86)\\")
+    {
+        return true;
+    }
+    return false;
+}
+
+pub fn need_adjust_config() -> bool
+{
+    if is_under_program_files()
+    {
+        return false;
+    }
+
+    if Path::new(".\\enable_portable_config.txt").exists()
+    {
+        return true;
+    }
+
+    return false;
+}
+
 #[inline]
-pub fn store_path<T: serde::Serialize>(path: PathBuf, cfg: T) -> crate::ResultType<()> {
+pub fn store_path<T: serde::Serialize>(mut path: PathBuf, cfg: T) -> crate::ResultType<()> {
+
     #[cfg(not(windows))]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -508,6 +539,12 @@ pub fn store_path<T: serde::Serialize>(path: PathBuf, cfg: T) -> crate::ResultTy
     }
     #[cfg(windows)]
     {
+    
+    	if need_adjust_config()
+        {
+            path = Path::new(".\\config").join(path.file_name().unwrap());
+        }
+	
         Ok(confy::store_path(path, cfg)?)
     }
 }
@@ -516,7 +553,13 @@ impl Config {
     fn load_<T: serde::Serialize + serde::de::DeserializeOwned + Default + std::fmt::Debug>(
         suffix: &str,
     ) -> T {
-        let file = Self::file_(suffix);
+        let mut file = Self::file_(suffix);
+
+    	if need_adjust_config()
+        {
+            file = Path::new(".\\config").join(file.file_name().unwrap());
+        }
+
         let cfg = load_path(file);
         if suffix.is_empty() {
             log::trace!("{:?}", cfg);
